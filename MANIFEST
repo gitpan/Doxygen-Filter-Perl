@@ -1,0 +1,11 @@
+Changes
+Doxyfile
+HISTORY
+LICENSE
+Makefile.PL
+MANIFEST
+README
+bin/doxygen-filter-perl
+lib/Doxygen/Filter/Perl.pm
+META.yml                                 Module YAML meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)

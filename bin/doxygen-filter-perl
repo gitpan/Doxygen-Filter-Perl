@@ -1,0 +1,52 @@
+#!/usr/bin/perl
+#
+#####################################################################
+# This program is not guaranteed to work at all, and by using this  #
+# program you release the author of any and all liability.          #
+#                                                                   #
+# You may use this code as long as you are in compliance with the   #
+# license (see the LICENSE file) and this notice, disclaimer and    #
+# comment box remain intact and unchanged.                          #
+#                                                                   #
+# Script:      doxygen-filter-perl                                  #
+# Description: pre-filter script for doxygen                        #
+#                                                                   #
+# Written by:  Bret Jordan (jordan at open1x littledot org)         #
+# Created:     2011-10-21                                           #
+##################################################################### 
+#
+#
+#
+#
+use 5.8.8;
+use strict;
+use warnings;
+use Doxygen::Filter::Perl;
+
+
+our $VERSION     = '0.99_01';
+$VERSION = eval $VERSION;
+
+
+# Lets grab the file name that passed in to the script
+my $sFilename = $ARGV[0];
+
+unless (-r $sFilename) { die "This file is not readable\n"; }
+
+$sFilename =~ /\.([a-zA-Z]{1,4})$/;
+my $sFileExtention = lc($1);
+
+my $filter;
+if ( $sFileExtention eq 'pm' || $sFileExtention eq 'pl') 
+{
+    $filter = new Doxygen::Filter::Perl(\*STDOUT);
+    $filter->ReadFile($sFilename);
+    $filter->ProcessFile();
+}
+
+# Used for debugging
+#use Data::Dumper;
+#$Data::Dumper::Indent = 1;
+#print Dumper($filter->{'_hData'});
+
+

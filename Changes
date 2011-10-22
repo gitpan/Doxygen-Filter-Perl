@@ -1,0 +1,22 @@
+Release Notes:
+v0.99_01 - Initial Alpha Release (2011-10-21)
+    Differences from DoxyGenFilter
+        This represents a complete rewrite of the code and attempts to provide 
+        a frame work from which we can greatly expand the functionality over time.
+        We also build up a document object of the code that allows us to pull things
+        in from various places and relate them all correctly. 
+
+    New Features
+        We current support the following doxygen structural indicators
+            @file
+            @fn (@function and @method)
+        All section indicators should work under each structural indicators that we support
+        Verbatim formatting keeps comment "#" tags
+        We use the VERSION variable from the code in the file output definition
+        The @method and @function documentation blocks can reside inside or outside
+            the actaul subroutines that they are tied to.
+
+    Known Issues
+        POD support is not yet included
+        Only two structural indicators are currently supported - more to come
+        

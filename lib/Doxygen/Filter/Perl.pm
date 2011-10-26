@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (&lt;jordan2175@gmail.com&gt;, &lt;jordan@open1x.org&gt;)
-# $Id: Perl.pm 26 2011-10-22 04:45:32Z jordan2175 $
+# $Id: Perl.pm 33 2011-10-26 04:54:17Z jordan2175 $
 #*
 package Doxygen::Filter::Perl;
 
@@ -26,15 +26,13 @@ use 5.8.8;
 use strict;
 use warnings;
 
-our $VERSION     = '0.99_01';
+our $VERSION     = '0.99_02';
 $VERSION = eval $VERSION;
 
 
 =head1 NAME
 
 Doxygen::Filter::Perl - A perl code pre-filter for Doxygen
-
-=cut
 
 =head1 DESCRIPTION
 
@@ -43,8 +41,6 @@ perl scripts and modules to be used with the Doxygen engine.  We plan on
 supporting most Doxygen style comments and POD (plain old documentation) style 
 comments. The Doxgyen style comment blocks for methods/functions can be inside 
 or outside the method/function.  
-
-=cut
 
 =head1 USAGE
 
@@ -79,8 +75,6 @@ project to document your Perl scripts or methods. Example:
 
 All of your documentation will be in the ./doc/html/directory inside of your
 project root.
-
-=cut
 
 =head1 DOXYGEN SUPPORT
 
@@ -120,6 +114,27 @@ documented as $$foo, @$bar, %$foobar.  An example would look this:
 
     #** @method public ProcessDataValues ($$sFile, %$hDataValues)
 
+=head1 Data Structure
+
+    $self->{'_hData'}->{'filename'}->{'fullpath'}   = string
+    $self->{'_hData'}->{'filename'}->{'shortname'}  = string
+    $self->{'_hData'}->{'filename'}->{'version'}    = string
+    $self->{'_hData'}->{'filename'}->{'details'}    = string
+    $self->{'_hData'}->{'includes'}                 = array
+
+    $self->{'_hData'}->{'class'}->{'classorder'}                = array
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutineorder'} = array
+    $self->{'_hData'}->{'class'}->{$class}->{'details'}         = string
+    $self->{'_hData'}->{'class'}->{$class}->{'comments'}        = string
+
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'type'}        = string (method / function)
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'state'}       = string (public / private)
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'parameters'}  = string (method / function parameters)
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'code'}        = string
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'length'}      = integer
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'details'}     = string
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'comments'}    = string
+
 =cut
 
 
@@ -132,9 +147,10 @@ use constant {
     POD                 => 3,
     METHOD              => 4,
     DOXYFILE            => 21,
-    DOXYPACKAGE         => 22,
+    DOXYCLASS           => 22,
     DOXYFUNCTION        => 23,
     DOXYMETHOD          => 24,
+    DOXYCOMMENT         => 25,
 };
 
 
@@ -178,14 +194,14 @@ sub _init
 {
     my $self = shift;
 
-    $self->{'_oFileHandle'}     = shift || \*STDOUT;
     $self->{'_iState'}          = NORMAL;
     $self->{'_iPreviousState'}  = NORMAL;
-    $self->{'_aRawData'}        = {};
+    $self->{'_aRawFileData'}    = {};
     $self->{'_hData'}           = {};
-    $self->{'_sCurrentClass'}   = 'main';
+    $self->{'_sCurrentClass'}   = undef;    # This will get set i nthe _ProcessPackages line below
     $self->RESETSUB();
     $self->RESETDOXY();
+    #$self->_ProcessClasses('main');        # Need to add the main package to the object and data structure, so lets do it here
 }
 
 
@@ -201,21 +217,22 @@ sub ReadFile
     # Lets record the file name in the data structure
     $self->{'_hData'}->{'filename'}->{'fullpath'} = $sFilename;
     $sFilename =~ /^.*\/(.*)$/;
-    $self->{'_hData'}->{'filename'}->{'short'} = $1;
+    $self->{'_hData'}->{'filename'}->{'shortname'} = $1;
     open(DATAIN, $sFilename);
     my @aFileData = <DATAIN>;
     close (DATAIN);
-    $self->{'_aRawData'} = \@aFileData;
+    $self->{'_aRawFileData'} = \@aFileData;
 }
 
 sub ProcessFile
 {
-    # This method will search down each line of code to see what it should do
+    # This method is a state machine that will search down each line of code to see what it should do
     my $self = shift;
-    foreach my $line (@{$self->{'_aRawData'}})
+    
+    foreach my $line (@{$self->{'_aRawFileData'}})
     {
-        # Convert syntax block to supported doxygen forms
-        $line = $self->_ConvertSyntax($line);
+        # Convert syntax block header to supported doxygen form, if this line is a header
+        $line = ${$self->_ConvertToOfficalDoxygenSyntax(\$line)};
             
         # Lets first figure out what state we SHOULD be in and then we will deal with 
         # processing that state. This first block should walk through all the possible
@@ -224,6 +241,7 @@ sub ProcessFile
         {
             if    ($line =~ /^\s*sub\s*(.*)/) { $self->_ChangeState(METHOD);  }
             elsif ($line =~ /^\s*#\*\*\s+\@/) { $self->_ChangeState(DOXYGEN); }
+            elsif ($line =~ /^=head.*/)       { $self->_ChangeState(POD);     }
         }
         elsif ($self->{'_iState'} eq METHOD)
         {
@@ -242,19 +260,26 @@ sub ProcessFile
                 $self->_RestoreState();
                 if ($self->{'_iState'} eq NORMAL)
                 {
+                    # If this comment block is right next to a subroutine, lets make sure we
+                    # handle that condition
                     if    ($line =~ /^\s*sub\s*(.*)/) { $self->_ChangeState(METHOD);  }
                 }
             }
-        }     
+        }
+        elsif ($self->{'_iState'} eq POD)
+        {
+            if ($line =~ /^=cut/) { $self->_ChangeState(NORMAL); }
+        }
+
 
         # Process states
         if ($self->{'_iState'} eq NORMAL)
         {
-            if ($line =~ /^\s*package\s*(.*)\;/) { $self->{'_sCurrentClass'} = $1; }
-            elsif ($line =~ /^\s*use\s+[\w:]+/)  { $self->_ProcessInclude($line);  }
-            elsif ($line =~ /^\s*our\s+\$VERSION\s+\=\s+(.*)/) { $self->_ProcessVersionNumber($1); }
+            if    ($line =~ /^\s*package\s*(.*)\;/)             { $self->_ProcessClasses($line);    }
+            elsif ($line =~ /^\s*use\s+[\w:]+/)                 { $self->_ProcessInclude($line);    }
+            elsif ($line =~ /^\s*our\s+\$VERSION\s+\=\s+(.*)/)  { $self->_ProcessVersionNumber($1); }
         }        
-        elsif ($self->{'_iState'} eq METHOD)  { $self->_ProcessMethod($line); }
+        elsif ($self->{'_iState'} eq METHOD)  { $self->_ProcessPerlMethod($line); }
         elsif ($self->{'_iState'} eq DOXYGEN) { push (@{$self->{'_aDoxygenBlock'}}, $line); }
     }
 
@@ -267,7 +292,7 @@ sub PrintAll
     $self->_PrintFilenameBlock();
     $self->_PrintIncludesBlock();
     
-    foreach my $class (keys(%{$self->{'_hData'}->{'class'}}))
+    foreach my $class (@{$self->{'_hData'}->{'class'}->{'classorder'}})
     {
         $self->_PrintClassBlock($class);
         
@@ -285,22 +310,22 @@ sub PrintAll
         {
             my $sTypeName = $type . "s";
             $sTypeName =~ s/([^_]+)/\u\L$1/gi;
-            $self->_PrintStartBlock("\@name Avaliable $sTypeName");
-            $self->_PrintEndBlock();        
-            $self->_PrintStartBlock('@{');
-            $self->_PrintEndBlock();
+            print "/** \@name Avaliable $sTypeName */\n";
+            print "/** \@{ */\n";
             foreach my $state (keys(%{$hMethodData->{$type}}))
             {
                 foreach my $method (keys(%{$hMethodData->{$type}->{$state}}))
                 {
                     $self->_PrintMethodBlock($class,$state,$type,$method);
                 }
-            }       
-            $self->_PrintStartBlock('@}');
-            $self->_PrintEndBlock();
+            }
+            # End of named group block
+            print "/** \@} */\n";
         }
+        # Print end of class mark
+        print "}\;\n";
     }
-    $self->_DoxyPrint('};');
+
 }
 
 
@@ -329,20 +354,20 @@ sub _ChangeState
 sub _PrintFilenameBlock
 {
     my $self = shift;
-    $self->_PrintStartBlock("\@file $self->{'_hData'}->{'filename'}->{'fullpath'}");
-    $self->_DoxyPrint("$self->{'_hData'}->{'filename'}->{'details'}\n");
-    $self->_DoxyPrint("\@version $self->{'_hData'}->{'filename'}->{'version'}\n");
-    $self->_PrintEndBlock();
+    print "/** \@file $self->{'_hData'}->{'filename'}->{'fullpath'}\n";
+    if (defined $self->{'_hData'}->{'filename'}->{'details'}) { print "$self->{'_hData'}->{'filename'}->{'details'}\n"; }
+    print "\@version $self->{'_hData'}->{'filename'}->{'version'}\n";
+    print "*/\n";
 }
 
 sub _PrintIncludesBlock
 {
     my $self = shift;
-    foreach my $include (keys(%{$self->{'_hData'}->{'includes'}}))
+    foreach my $include (@{$self->{'_hData'}->{'includes'}})
     {
-        $self->_DoxyPrint("\#include \"" . $include . ".pm\"\n");
+        print "\#include \"$include.pm\"\n";
     }
-    $self->_DoxyPrint("\n");
+    print "\n";
 }
 
 sub _PrintClassBlock
@@ -354,11 +379,18 @@ sub _PrintClassBlock
     my $parent = $1;
     my $class = $2;
     
-    $self->_PrintStartBlock("\@class $sFullClass");
-    $self->_DoxyPrint('@nosubgrouping');
-    $self->_PrintEndBlock();
-    $self->_DoxyPrint("class $sFullClass : public $parent\{\n");
-    $self->_DoxyPrint("public:\n");
+    print "/** \@class $sFullClass\n";
+    
+    my $details = $self->{'_hData'}->{'class'}->{$sFullClass}->{'details'};
+    if (defined $details) { print "$details\n"; }
+
+    my $comments = $self->{'_hData'}->{'class'}->{$sFullClass}->{'comments'};
+    if (defined $comments) { print "$comments\n"; }   
+    
+    print "\@nosubgrouping */\n";
+
+    print "class $sFullClass : public $parent { \n";
+    print "public:\n";
 }
 
 sub _PrintMethodBlock
@@ -369,30 +401,37 @@ sub _PrintMethodBlock
     my $type = shift;
     my $method = shift;
     my $parameters = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'parameters'} || "";
-    my $sHTMLBlock = "
-\@htmlonly 
-<div id='codesection-$method' class='dynheader closed' style='cursor:pointer;' onclick='return toggleVisibility(this)'>
-    <img id='codesection-$method-trigger' src='closed.png' style='display:inline'><b>Code:</b>
-</div>
-<div id='codesection-$method-summary' class='dyncontent' style='display:block;font-size:small;'>click to view</div>
-<div id='codesection-$method-content' class='dyncontent' style='display: none;'> 
-\@endhtmlonly\n";
-    $self->_PrintStartBlock("\@fn $state $type $method\(\)");
+
+
+   
+    print "/** \@fn $state $type $method\(\)\n";
+
+    my $details = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'details'};
+    if (defined $details) { print "$details\n"; }
+    else { print "Undocumented Method\n"; }
+
+    my $comments = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'comments'};
+    if (defined $comments) { print "$comments\n"; }
+
+    # Print collapsible source code block   
+    print "\@htmlonly\n";
+    print "<div id='codesection-$method' class='dynheader closed' style='cursor:pointer;' onclick='return toggleVisibility(this)'>\n";
+    print "\t<img id='codesection-$method-trigger' src='closed.png' style='display:inline'><b>Code:</b>\n";
+    print "</div>\n";
+    print "<div id='codesection-$method-summary' class='dyncontent' style='display:block;font-size:small;'>click to view</div>\n";
+    print "<div id='codesection-$method-content' class='dyncontent' style='display: none;'>\n";
+    print "\@endhtmlonly\n";
     
-    if (defined $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'details'})
-    {
-        $self->_DoxyPrint("$self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'details'}\n");
-    }
-    else { $self->_DoxyPrint("Undocumented Method\n"); }
-    
-    $self->_DoxyPrint("$sHTMLBlock\n");
-    $self->_DoxyPrint("\@code\n");
-    $self->_DoxyPrint("\# Number of lines of code in $method: $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'length'}\n");
-    $self->_DoxyPrint("$self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'code'}\n");
-    $self->_DoxyPrint("\@endcode\n");
-    $self->_DoxyPrint("\@htmlonly\n</div>\n\@endhtmlonly\n");
-    $self->_PrintEndBlock();
-    $self->_DoxyPrint("$state $type $method\($parameters\)\;\n");      
+    print "\@code\n";
+    print "\# Number of lines of code in $method: $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'length'}\n";
+    print "$self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'code'}\n";
+    print "\@endcode \@htmlonly\n";
+    print "</div>\n";
+    print "\@endhtmlonly */\n";
+
+
+
+    print "$state $type $method\($parameters\)\;\n";      
 }
 
 sub _ProcessVersionNumber
@@ -403,6 +442,21 @@ sub _ProcessVersionNumber
     $version =~ s/\'//g;
     $version =~ s/\;//g;
     $self->{'_hData'}->{'filename'}->{'version'} = $version;
+}
+
+sub _ProcessClasses
+{
+    # This method will handle all of the new packages/classes we discover
+    # Required:
+    #   string  (line of code)
+    my $self = shift;
+    my $line = shift;
+    
+    if ($line =~ /^\s*package\s*(.*)\;$/)
+    {
+        $self->{'_sCurrentClass'} = $1;
+        push (@{$self->{'_hData'}->{'class'}->{'classorder'}}, $1);        
+    }
 }
 
 sub _ProcessInclude
@@ -419,12 +473,12 @@ sub _ProcessInclude
         {
             # Allows doxygen to know where to look for other packages
             $sIncludeModule =~ s/::/\//g;
-            $self->{'_hData'}->{'includes'}->{$sIncludeModule} = 1;
+            push (@{$self->{'_hData'}->{'includes'}}, $sIncludeModule);
         }
     }  
 }
 
-sub _ProcessMethod
+sub _ProcessPerlMethod
 {
     # This method will process the contents of a method
     my $self = shift;
@@ -504,14 +558,20 @@ sub _ProcessDoxygenCommentBlock
     # This method will process an entire comment block in one pass, after it has all been gathered by the state machine
     my $self = shift;
     my @aBlock = @{$self->{'_aDoxygenBlock'}};
+    
+    # Lets clean up the array in the object now that we have a local copy as we will no longer need that.  We want to make
+    # sure it is all clean and ready for the next comment block
+    $self->RESETDOXY();
+
     my $sClassName = $self->{'_sCurrentClass'};
     my $iSubState = 0;
-
+    
+    # Remove the command line from the array so we do not re-print it out by mistake
+    my $sCommandLine = shift @aBlock;
+    
     # Lets look for the end comment block, if their is one, lets remove it
     if ($aBlock[-1] =~ /^\s*#\*\s*$/) { pop @aBlock; }
 
-    # Remove the command line from the array so we do not re-print it out by mistake
-    my $sCommandLine = shift @aBlock;
     $sCommandLine =~ /^\s*#\*\*\s+\@([\w:]+)\s+(.*)/;
     my $sCommand = lc($1);
     my $sOptions = $2; 
@@ -519,38 +579,39 @@ sub _ProcessDoxygenCommentBlock
     # If the user entered @fn instead of @function, lets change it
     if ($sCommand eq "fn") { $sCommand = "function"; }
     
-    # Lets clean up the array in the object now that we have a local copy as we will no longer need that.  We want to make
-    # sure it is all clean and ready for the next comment block
-    $self->RESETDOXY();
-    
     # Lets find out what doxygen sub state we should be in
     if    ($sCommand eq 'file')     { $iSubState = DOXYFILE;     }
-    elsif ($sCommand eq 'package')  { $iSubState = DOXYPACKAGE;  }
+    elsif ($sCommand eq 'class')    { $iSubState = DOXYCLASS;    }
+    elsif ($sCommand eq 'package')  { $iSubState = DOXYCLASS;    }
     elsif ($sCommand eq 'function') { $iSubState = DOXYFUNCTION; }
     elsif ($sCommand eq 'method')   { $iSubState = DOXYMETHOD;   }
+    else { $iSubState = DOXYCOMMENT; }
 
 
     if ($iSubState eq DOXYFILE ) 
     {
-        # Process a file block
-        my $sFilename = $sOptions;
-        if ($sFilename eq $self->{'_hData'}->{'filename'}->{'short'})
-        {
-            my $sBlockDetails = "";
-            my $iInVerbatinBlock = 0;
-            foreach my $line (@aBlock) 
-            {
-                if    ($line =~ /^\s*#\s*\@verbatim/)    { $iInVerbatinBlock = 1; $line =~ s/^\s*#//;}
-                elsif ($line =~ /^\s*#\s*\@endverbatim/) { $iInVerbatinBlock = 0; $line =~ s/^\s*#//;}
-                if ($iInVerbatinBlock == 0) { $line =~ s/^\s*#//; }
-                $sBlockDetails .= $line;
-            }
-            $self->{'_hData'}->{'filename'}->{'details'} = $sBlockDetails;
-        }
+        $self->{'_hData'}->{'filename'}->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
     }
-    elsif ($iSubState eq DOXYPACKAGE)
+    elsif ($iSubState eq DOXYCLASS)
     {
-        # Process a package block
+        my $sClassName = $sOptions;
+        $self->{'_hData'}->{'class'}->{$sClassName}->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
+    }
+    elsif ($iSubState eq DOXYCOMMENT)
+    {
+        # For extra comment blocks we need to add the command and option line back to the front of the array
+        unshift (@aBlock, "\@$sCommand $sOptions\n");
+        my $sMethodName = $self->{'_sCurrentMethodName'};
+        if (defined $sMethodName)
+        {
+            $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'comments'} .= $self->_RemovePerlCommentFlags(\@aBlock);
+            $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'comments'} .= "\n";
+        }
+        else 
+        {
+            $self->{'_hData'}->{'class'}->{$sClassName}->{'comments'} .= $self->_RemovePerlCommentFlags(\@aBlock);
+            $self->{'_hData'}->{'class'}->{$sClassName}->{'comments'} .= "\n";
+        }
     }
     elsif ($iSubState eq DOXYFUNCTION || $iSubState eq DOXYMETHOD)
     {
@@ -588,39 +649,65 @@ sub _ProcessDoxygenCommentBlock
             $sParameters = $self->_ConvertParameters($sParameters);
         }
         
-        my $sBlockDetails = "";
-        my $iInVerbatinBlock = 0;
-        foreach my $line (@aBlock) 
-        {
-            if    ($line =~ /^\s*#\s*\@verbatim/)    { $iInVerbatinBlock = 1; $line =~ s/^\s*#//;}
-            elsif ($line =~ /^\s*#\s*\@endverbatim/) { $iInVerbatinBlock = 0; $line =~ s/^\s*#//;}
-            if ($iInVerbatinBlock == 0) { $line =~ s/^\s*#//; }
-            $sBlockDetails .= $line;
-        }
-        
         $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'type'} = $sCommand;
         if (defined $state)
         {
             $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'state'} = $state;    
         }
         $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'parameters'} = $sParameters;
-        $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'details'} = $sBlockDetails;
+        $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
+
     } # End DOXYFUNCTION || DOXYMETHOD
 }
 
-sub _ConvertSyntax
+sub _RemovePerlCommentFlags
+{
+    # This method will remove all of the comment marks "#" for our output to Doxygen.  If the line is 
+    # flagged for verbatim then lets not do anything.
+    # Required:
+    #   array_ref   (array of lines of doxygen comments)
+    # Return: 
+    #   string  (doxygen comments in one long string)
+    my $self = shift;
+    my $aBlock = shift;
+    
+    my $sBlockDetails = "";
+    my $iInVerbatimBlock = 0;
+    foreach my $line (@$aBlock) 
+    {
+#        if    ($line =~ /^\s*#\*\*.*$/)   { $line =~ s/^(\s*)#\*\*/$1\/\*\*/; }
+#        elsif ($line =~ /^\s*#\*\s*$/)    { $line =~ s/^(\s*)#\*/$1\*\//; }
+        
+        # Lets check for a verbatim command option
+        if    ($line =~ /^\s*#\s*\@(\w+)/) { $line =~ s/^\s*#\s*//; }
+                
+        if    (defined $1 && $1 eq "verbatim")    { $iInVerbatimBlock = 1; }
+        elsif (defined $1 && $1 eq "endverbatim") { $iInVerbatimBlock = 0; }                
+
+        # Lets remove all of the Perl comment markers so long as we are not in a verbatim block
+        if ($iInVerbatimBlock == 0) { $line =~ s/^\s*#\s*//; }
+        
+        $sBlockDetails .= $line;
+    }
+    return $sBlockDetails;
+}
+
+sub _ConvertToOfficalDoxygenSyntax
 {
     # This method will check the current line for various unsupported doxygen comment blocks and convert them
     # to the method we support, #** @command.  The reason for this is so that we do not need to add them in 
     # every if statement throughout the code.
     # Required:
-    #   string  (line of code)
+    #   string_ref  (line of code)
     # Return:
-    #   string  (line of code)
+    #   string_ref  (line of code)
     my $self = shift;
-    my $line = shift;
+    my $lineref = shift;
+    my $line = $$lineref;
+    
+    # This will match "## @command" and convert it to "#** @command"
     if ($line =~ /^\s*##\s+\@/) { $line =~ s/^(\s*)##(\s+\@)/$1#\*\*$2/; } 
-    return $line;
+    return \$line;
 }
 
 sub _ConvertParameters
@@ -640,33 +727,11 @@ sub _ConvertParameters
     return $sParameters;
 }
 
-sub _DoxyPrint 
-{
-    my $self = shift;
-    my $outfh = $self->{_oFileHandle};
-    print $outfh @_;
-}
 
-sub _PrintStartBlock
-{
-    my $self = shift;
-    my $command = shift;
-    $self->_DoxyPrint("/** $command\n");
-    return $self;
-}
 
-sub _PrintEndBlock 
-{
-    my $self = shift;
-    $self->_DoxyPrint("*/\n");
-    return $self;
-}
-
-=head1 AUTHORS
+=head1 AUTHOR
 
 Bret Jordan <jordan at open1x littledot org> or <jordan2175 at gmail littledot com>
-
-=cut
 
 =head1 LICENSE
 

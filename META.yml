@@ -20,4 +20,4 @@ no_index:
 requires:
   Test::More: 0.98
   Test::Output: 1.01
-version: 0.99_01
+version: 0.99_02

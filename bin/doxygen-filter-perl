@@ -24,7 +24,7 @@ use warnings;
 use Doxygen::Filter::Perl;
 
 
-our $VERSION     = '0.99_01';
+our $VERSION     = '0.99_02';
 $VERSION = eval $VERSION;
 
 
@@ -39,7 +39,7 @@ my $sFileExtention = lc($1);
 my $filter;
 if ( $sFileExtention eq 'pm' || $sFileExtention eq 'pl') 
 {
-    $filter = new Doxygen::Filter::Perl(\*STDOUT);
+    $filter = new Doxygen::Filter::Perl();
     $filter->ReadFile($sFilename);
     $filter->ProcessFile();
 }

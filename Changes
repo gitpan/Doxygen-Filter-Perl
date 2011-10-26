@@ -1,4 +1,15 @@
 Release Notes:
+v0.99_02 - Alpha Release 2 (2011-10-25)
+    Changes
+        Lots of code clean up
+        Added support for the following structural indicators
+            @class
+            @section
+            @subsection
+            General comments with a @brief
+        Fixed the output so that additional comments like @section blocks show up 
+            correctly and in the right place.
+            
 v0.99_01 - Initial Alpha Release (2011-10-21)
     Differences from DoxyGenFilter
         This represents a complete rewrite of the code and attempts to provide 
@@ -14,7 +25,7 @@ v0.99_01 - Initial Alpha Release (2011-10-21)
         Verbatim formatting keeps comment "#" tags
         We use the VERSION variable from the code in the file output definition
         The @method and @function documentation blocks can reside inside or outside
-            the actaul subroutines that they are tied to.
+            the actual subroutines that they are tied to.
 
     Known Issues
         POD support is not yet included

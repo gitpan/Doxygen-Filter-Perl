@@ -6,6 +6,8 @@ HOSTED AT
 
 MAJOR FEATURES
     The major features of Doxygen::Filter::Perl are as follows:
+        Support for Doxygen style comments in Perl
+        Ability to convert POD comments in to Doxygen format
 
 
 INSTALLATION
@@ -20,8 +22,14 @@ INSTALLATION
         PROJECT_NAME
         PROJECT_NUMBER
 
+
 DEPENDENCIES
     This module requires these other modules and libraries:
+    Pod::POM (0.27)                 [License = Perl]
+    Pod::POM::View::HTML (1.06)     [License = Perl]
+    Log:Log4perl (1.33)             [License = Perl]
+    Test::More (0.98)               [License = Perl]
+    Test::Output (1.01)             [License = Perl]
 
 
 NOTES

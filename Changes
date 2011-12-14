@@ -1,4 +1,23 @@
 Release Notes:
+v0.99_21 - Release Candidate  1 (2011-12-13)
+    Changes
+        Fixed some issues with supporting POD
+        Did some code cleanup
+
+v0.99_11 - Beta Release 1 (unreleased)
+    New Features
+        Added basic support for POD
+
+v0.99_03 - Alpha Release 3 (unreleased)
+    Changes
+        Fixed issues with VERSION harvesting, short filenames, windows paths, spacing around
+            method and function names etc.  Thanks to Hoppfrosch (hoppfrosch at gmx littledot de)
+            for the patch and suggestions
+        Cleaned up state machine and added ability to keep track or previous states
+        Integrated Log4perl debugging
+    New Features
+        Started adding support for POD processing
+        
 v0.99_02 - Alpha Release 2 (2011-10-25)
     Changes
         Lots of code clean up
@@ -16,7 +35,6 @@ v0.99_01 - Initial Alpha Release (2011-10-21)
         a frame work from which we can greatly expand the functionality over time.
         We also build up a document object of the code that allows us to pull things
         in from various places and relate them all correctly. 
-
     New Features
         We current support the following doxygen structural indicators
             @file
@@ -26,8 +44,6 @@ v0.99_01 - Initial Alpha Release (2011-10-21)
         We use the VERSION variable from the code in the file output definition
         The @method and @function documentation blocks can reside inside or outside
             the actual subroutines that they are tied to.
-
     Known Issues
         POD support is not yet included
-        Only two structural indicators are currently supported - more to come
-        
+        Only two structural indicators are currently supported - more to com

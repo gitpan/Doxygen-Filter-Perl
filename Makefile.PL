@@ -7,6 +7,9 @@ WriteMakefile(
     VERSION_FROM    => 'lib/Doxygen/Filter/Perl.pm', # finds $VERSION
     ABSTRACT        => 'Methods for pre-filtering Perl code for Doxygen',
     PREREQ_PM       => {
+            'Pod::POM'                  => 0.27,
+            'Pod::POM::View::HTML'      => 1.06,
+            'Log::Log4perl'             => 1.33,
             'Test::More'                => 0.98,
             'Test::Output'              => 1.01,
     },

@@ -22,10 +22,27 @@ use 5.8.8;
 use strict;
 use warnings;
 use Doxygen::Filter::Perl;
+use Log::Log4perl;
 
 
-our $VERSION     = '0.99_02';
+our $VERSION     = '0.99_21';
 $VERSION = eval $VERSION;
+
+
+my %hDebugConfig = (
+    'log4perl.oneMessagePerAppender'        => 1,
+    'log4perl.rootlogger'                   => 'FATAL, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_ChangeState' => 'FATAL, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_ProcessDoxygenCommentBlock' => 'FATAL, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_ConvertPodFormattingToDoxygenFormat' => 'DEBUG, SCREEN',
+    'log4perl.appender.SCREEN'              => 'Log::Log4perl::Appender::Screen',
+    'log4perl.appender.SCREEN.stderr'       => 0,
+    'log4perl.appender.SCREEN.Threshold'    => 'DEBUG',
+    'log4perl.appender.SCREEN.layout'       => 'Log::Log4perl::Layout::PatternLayout',
+    'log4perl.appender.SCREEN.layout.ConversionPattern' => '%-5p %L %M{1}() - %m%n',
+);
+
+Log::Log4perl::init(\%hDebugConfig);
 
 
 # Lets grab the file name that passed in to the script
@@ -42,6 +59,7 @@ if ( $sFileExtention eq 'pm' || $sFileExtention eq 'pl')
     $filter = new Doxygen::Filter::Perl();
     $filter->ReadFile($sFilename);
     $filter->ProcessFile();
+    $filter->PrintAll();
 }
 
 # Used for debugging

@@ -25,16 +25,25 @@ use Doxygen::Filter::Perl;
 use Log::Log4perl;
 
 
-our $VERSION     = '0.99_21';
+our $VERSION     = '1.00';
 $VERSION = eval $VERSION;
 
 
+
+# You can not have any debugging turned on if you send the data through 
+# doxygen as it will mess up the output.  So before you run "doxygen Doxyfile"
+# make sure you have turned off all of the debugging.  This is really only
+# here so you can run "doxygen-filter-perl lib/some/path/to/a/perl.pm" and get
+# debugging output
 my %hDebugConfig = (
     'log4perl.oneMessagePerAppender'        => 1,
     'log4perl.rootlogger'                   => 'FATAL, SCREEN',
-    'log4perl.logger.Doxygen::Filter::Perl::_ChangeState' => 'FATAL, SCREEN',
-    'log4perl.logger.Doxygen::Filter::Perl::_ProcessDoxygenCommentBlock' => 'FATAL, SCREEN',
-    'log4perl.logger.Doxygen::Filter::Perl::_ConvertPodFormattingToDoxygenFormat' => 'DEBUG, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_ChangeState'                           => 'FATAL, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_ProcessDoxygenCommentBlock'            => 'FATAL, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_ProcessPodCommentBlock'                => 'FATAL, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_ProcessPerlMethod'                     => 'FATAL, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_ConvertPodFormattingToDoxygenFormat'   => 'FATAL, SCREEN',
+    'log4perl.logger.Doxygen::Filter::Perl::_RemovePerlCommentFlags'                => 'FATAL, SCREEN',
     'log4perl.appender.SCREEN'              => 'Log::Log4perl::Appender::Screen',
     'log4perl.appender.SCREEN.stderr'       => 0,
     'log4perl.appender.SCREEN.Threshold'    => 'DEBUG',

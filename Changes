@@ -1,5 +1,24 @@
 Release Notes:
-v0.99_21 - Release Candidate  1 (2011-12-13)
+v1.00 - GA Release (2011-12-22)
+    Changes
+        Added some code documentation and performed some minor code cleanup
+
+v0.99_24 - Release Candidate 4 (2011-12-21)
+    Changes
+        Fixed more issues with counting subroutines
+        Fixed issue where doxygen section comment blocks were not showing up right
+
+v0.99_23 - Release Candidate 3 (2011-12-19)
+    Changes
+        Fixed issue where comments were getting stripped accidentally when found in pattern match
+
+v0.99_22 - Release Candidate 2 (2011-12-19)
+    Changes
+        Fixed issue where POD comments with special Doxygen characters caused problems
+        Fixed issue where POD multi-word section headers did not print correctly
+        Fixed issue with subroutine processing
+
+v0.99_21 - Release Candidate 1 (2011-12-13)
     Changes
         Fixed some issues with supporting POD
         Did some code cleanup

@@ -40,6 +40,6 @@
          }
       }
    },
-   "release_status" : "testing",
-   "version" : "0.99_21"
+   "release_status" : "stable",
+   "version" : "1.00"
 }

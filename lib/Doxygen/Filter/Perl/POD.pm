@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: POD.pm 58 2011-12-14 06:25:22Z jordan2175 $
+# $Id: POD.pm 80 2011-12-22 23:24:11Z jordan2175 $
 #*
 package Doxygen::Filter::Perl::POD;
 
@@ -28,7 +28,7 @@ use warnings;
 use parent qw(Pod::POM::View::HTML);
 use Log::Log4perl;
 
-our $VERSION     = '0.99_21';
+our $VERSION     = '1.00';
 $VERSION = eval $VERSION;
 
 
@@ -42,14 +42,18 @@ sub view_head1
 {
     my ($self, $head1) = @_;
     my $title = $head1->title->present($self);
-    return "\n\@section $title\n" . $head1->content->present($self);
+    my $name = $title;
+    $name =~ s/\s/_/g;
+    return "\n\@section $name $title\n" . $head1->content->present($self);
 }
 
 sub view_head2 
 {
     my ($self, $head2) = @_;
     my $title = $head2->title->present($self);
-    return "\n\@subsection $title\n" . $head2->content->present($self);
+    my $name = $title;
+    $name =~ s/\s/_/g;    
+    return "\n\@subsection $name $title\n" . $head2->content->present($self);
 }
 
 sub view_seq_code 

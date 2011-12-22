@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: Perl.pm 58 2011-12-14 06:25:22Z jordan2175 $
+# $Id: Perl.pm 80 2011-12-22 23:24:11Z jordan2175 $
 #*
 package Doxygen::Filter::Perl;
 
@@ -30,7 +30,7 @@ use Log::Log4perl;
 use Pod::POM;
 use Doxygen::Filter::Perl::POD;
 
-our $VERSION     = '0.99_21';
+our $VERSION     = '1.00';
 $VERSION = eval $VERSION;
 
 
@@ -50,6 +50,10 @@ my $hValidStates = {
 
 sub new
 {
+    #** @method private new ()
+    # This is the constructor and it calls _init() to initiate
+    # the various variables
+    #*
     my $pkg = shift;
     my $class = ref($pkg) || $pkg;
     
@@ -63,6 +67,9 @@ sub new
 
 sub DESTROY
 {
+    #** @method private DESTROY ()
+    # This is the destructor
+    #*
     my $self = shift;
     $self = {};
 }
@@ -84,6 +91,10 @@ sub RESETPOD   { shift->{'_aPodBlock'}      = [];    }
 
 sub _init
 {
+    #** @method private _init ()
+    # This method is used in the constructor to initiate 
+    # the various variables in the object
+    #*
     my $self = shift;
     $self->{'_iDebug'}          = 0;
     $self->{'_sState'}          = undef;
@@ -108,11 +119,13 @@ sub ReadFile
     #** @method public ReadFile ($sFilename)
     # This method will read the contents of the file in to an array
     # and store that in the object as $self->{'_aRawFileData'}
-    # @param Required: string (filename)
+    # @param sFilename - required string (filename to use)
     #*
-    
     my $self = shift;
     my $sFilename = shift;
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering ReadFile ###");
+    
     # Lets record the file name in the data structure
     $self->{'_hData'}->{'filename'}->{'fullpath'} = $sFilename;
 
@@ -143,7 +156,7 @@ sub ProcessFile
     foreach my $line (@{$self->{'_aRawFileData'}})
     {
         # Convert syntax block header to supported doxygen form, if this line is a header
-        $line = $self->_ConvertToOfficalDoxygenSyntax($line);
+        $line = $self->_ConvertToOfficialDoxygenSyntax($line);
             
         # Lets first figure out what state we SHOULD be in and then we will deal with 
         # processing that state. This first block should walk through all the possible
@@ -239,6 +252,9 @@ sub PrintAll
     # elements that are part of that package or class
     #*
     my $self = shift;
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering PrintAll ###");
+
     $self->_PrintFilenameBlock();
     $self->_PrintIncludesBlock();
     
@@ -284,9 +300,16 @@ sub PrintAll
 sub _RestoreState { shift->_ChangeState(); }
 sub _ChangeState
 {
+    #** @method private _ChangeState ($state)
+    # This method will change and keep track of the various states that the state machine
+    # transitions to and from. Having this information allows you to return to a previous 
+    # state. If you pass nothing in to this method it will restore the previous state.
+    # @param state - optional string (state to change to)
+    #*
     my $self = shift;
     my $state = shift;
     my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _ChangeState ###");
     
     if (defined $state && exists $hValidStates->{$state})
     {
@@ -317,7 +340,13 @@ sub _ChangeState
 
 sub _PrintFilenameBlock
 {
+    #** @method private _PrintFilenameBlock ()
+    # This method will print the filename section in appropriate doxygen syntax
+    #*
     my $self = shift;
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _PrintFilenameBlock ###");
+    
     if (defined $self->{'_hData'}->{'filename'}->{'fullpath'})
     {
         print "/** \@file $self->{'_hData'}->{'filename'}->{'fullpath'}\n";
@@ -329,7 +358,13 @@ sub _PrintFilenameBlock
 
 sub _PrintIncludesBlock
 {
+    #** @method private _PrintIncludesBlock ()
+    # This method will print the various extra modules that are used
+    #*
     my $self = shift;
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _PrintIncludeBlock ###");
+
     foreach my $include (@{$self->{'_hData'}->{'includes'}})
     {
         print "\#include \"$include.pm\"\n";
@@ -339,9 +374,15 @@ sub _PrintIncludesBlock
 
 sub _PrintClassBlock
 {
+    #** @method private _PrintClassBlock ($sFullClass)
+    # This method will print the class/package block in appropriate doxygen syntax
+    # @param sFullClass - required string (full name of the class)
+    #*
     my $self = shift;
     my $sFullClass = shift;
-    
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _PrintClassBlock ###");
+
     $sFullClass =~ /(.*)\:\:(\w+)$/;
     my $parent = $1;
     my $class = $2;
@@ -362,11 +403,21 @@ sub _PrintClassBlock
 
 sub _PrintMethodBlock
 {
+    #** @method private _PrintMethodBlock ($class, $state, $type, $method)
+    # This method will print the various subroutines/functions/methods in apprporiate doxygen syntax
+    # @param class - required string (name of the class)
+    # @param state - required string (current state)
+    # @param type - required string (type)
+    # @param method - required string (name of method)
+    #*
     my $self = shift;
     my $class = shift;
     my $state = shift;
     my $type = shift;
     my $method = shift;
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _PrintMethodBlock ###");
+
     my $parameters = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'parameters'} || "";
 
     print "/** \@fn $state $type $method\(\)\n";
@@ -399,9 +450,18 @@ sub _PrintMethodBlock
 
 sub _ProcessPerlMethod
 {
-    # This method will process the contents of a method
+    #** @method private _ProcessPerlMethod ($line)
+    # This method will process the contents of a subroutine/function/method and try to figure out
+    # the name and wether or not it is a private or public method.  The private or public status,
+    # if not defined in a doxygen comment block will be determined based on the file name.  As with
+    # C and other languages, an "_" should be the first character for all private functions/methods.
+    # @param line - required string (full line of code)
+    #*
     my $self = shift;
     my $line = shift;
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _ProcessPerlMethod ###");
+    
     my $sClassName = $self->{'_sCurrentClass'};
 
     if ($line =~ /^\s*sub\s+(.*)/) 
@@ -413,6 +473,7 @@ sub _ProcessPerlMethod
         $sName =~ s/\{.*\}?//;
         # Remove any leading or trailing whitespace from the name, just to be safe
         $sName =~ s/\s//g;
+        $logger->debug("Method Name: $sName");
         
         push (@{$self->{'_hData'}->{'class'}->{$sClassName}->{'subroutineorder'}}, $sName); 
         $self->{'_sCurrentMethodName'} = $sName; 
@@ -424,21 +485,42 @@ sub _ProcessPerlMethod
     else { $self->{'_sCurrentMethodState'} = 'public'; }
     
     my $sMethodState = $self->{'_sCurrentMethodState'};
+    $logger->debug("Method State: $sMethodState");
     
     # We need to count the number of open and close braces so we can see if we are still in a subroutine or not
     # but we need to becareful so that we do not count braces in comments and braces that are in match patters /\{/
     # If there are more open then closed, then we are still in a subroutine
     my $cleanline = $line;
-    # Remove any comments even those inline with code
-    $cleanline =~ s/#.*$//;
-    # TODO need to find a good way to remove braces from counting when they are in a pattern match but not when they
-    # are supposed to be there as in the second use case listed below.  Below the use cases is some ideas on how to do this.
+    $logger->debug("Cleanline: $cleanline");
+    
+    # Remove any comments even those inline with code but not if the hash mark "#" is in a pattern match 
+    unless ($cleanline =~ /=~/) { $cleanline =~ s/#.*$//; }
+    $logger->debug("Cleanline: $cleanline");
+    # Need to remove braces from counting when they are in a pattern match but not when they are supposed to be 
+    # there as in the second use case listed below.  Below the use cases is some ideas on how to do this.
     # use case: $a =~ /\{/
     # use case: if (/\{/) { foo; }
-    $cleanline =~ s#/.*/##g;
+    # use case: unless ($cleanline =~ /=~/) { $cleanline =~ s/#.*$//; }
+    $cleanline =~ s#/.*?/##g;
+    $logger->debug("Cleanline: $cleanline");
+    # Remove any braces found in a print statement lile:
+    # use case: print "some foo { bar somethingelse";
+    # use case: print "$self->{'_hData'}->{'filename'}->{'details'}\n";
+    if ($cleanline =~ /(.*?print\s*)(.*?);(.*)/)
+    {
+        my $sLineData1 = $1;
+        my $sLineData2 = $2;
+        my $sLineData3 = $3;
+        $sLineData2 =~ s#[{}]##g;
+        $cleanline = $sLineData1 . $sLineData2. $sLineData3;
+    }
+    #$cleanline =~ s/(print\s*\".*){(.*\")/$1$2/g;
+    $logger->debug("Cleanline: $cleanline");
     
     $self->{'_iOpenBrace'} += @{[$cleanline =~ /\{/g]};
     $self->{'_iCloseBrace'} += @{[$cleanline =~ /\}/g]};        
+    $logger->debug("Open Brace Number: $self->{'_iOpenBrace'}");
+    $logger->debug("Close Brace Number: $self->{'_iCloseBrace'}");
     
     
     # Use Case 1: sub foo { return; }
@@ -448,17 +530,25 @@ sub _ProcessPerlMethod
     if ($self->{'_iOpenBrace'} > $self->{'_iCloseBrace'}) 
     { 
         # Use Case 2, still in subroutine
+        $logger->debug("We are still in the subroutine");
     }
     elsif ($self->{'_iOpenBrace'} > 0 && $self->{'_iOpenBrace'} == $self->{'_iCloseBrace'}) 
     { 
         # Use Case 1, we are leaving a subroutine
+        $logger->debug("We are leaving the subroutine");
         $self->_ChangeState('NORMAL');
         $self->RESETSUB();
     }
     else 
     { 
         # Use Case 3, still in subroutine
+        $logger->debug("A subroutine has been started but we are not yet in it as we have yet to see an open brace");
     }
+
+    # Doxygen makes use of the @ symbol and treats it as a special reserved character.  This is a problem for perl
+    # and especailly when we are documenting our own Doxygen code we have print statements that include things like @endcode 
+    # as is found in _PrintMethodBlock(). Lets convert those @ to @amp; 
+    $line =~ s/\@endcode/\&\#64\;endcode/g;
 
     # Record the current line for code output
     $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'code'} .= $line;
@@ -480,9 +570,13 @@ sub _ProcessPerlMethod
 
 sub _ProcessPodCommentBlock
 {
+    #** @method private _ProcessPodCommentBlock ()
     # This method will process an entire POD block in one pass, after it has all been gathered by the state machine.
+    #*
     my $self = shift;
-    
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _ProcessPodCommentBlock ###");
+        
     my $sClassName = $self->{'_sCurrentClass'};    
     my @aBlock = @{$self->{'_aPodBlock'}};
     
@@ -491,7 +585,12 @@ sub _ProcessPodCommentBlock
     $self->RESETPOD();
 
     my $sPodRawText;
-    foreach (@aBlock) { $sPodRawText .= $_; }
+    foreach (@aBlock) 
+    { 
+        # If we find any Doxygen special characters in the POD, lets escape them
+        s/(\@|\\|\%|#)/\\$1/g;
+        $sPodRawText .= $_;
+    }
 
     my $parser = new Pod::POM();
     my $pom = $parser->parse_text($sPodRawText);
@@ -503,7 +602,9 @@ sub _ProcessPodCommentBlock
 
 sub _ProcessDoxygenCommentBlock
 {
+    #** @method private _ProcessDoxygenCommentBlock ()
     # This method will process an entire comment block in one pass, after it has all been gathered by the state machine
+    #*
     my $self = shift;
     my $logger = $self->GetLogger($self);
     $logger->debug("### Entering _ProcessDoxygenCommentBlock ###");
@@ -518,7 +619,7 @@ sub _ProcessDoxygenCommentBlock
     my $sSubState = '';
     $logger->debug("We are currently in class $sClassName");
     
-    # Remove the command line from the array so we do not re-print it out by mistake
+    # Lets grab the command line and put it in a variable for easier use
     my $sCommandLine = $aBlock[0];
     $logger->debug("The command line for this doxygen comment is $sCommandLine");
 
@@ -562,11 +663,13 @@ sub _ProcessDoxygenCommentBlock
         my $sMethodName = $self->{'_sCurrentMethodName'};
         if (defined $sMethodName)
         {
+            $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'comments'} .= "\n";
             $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'comments'} .= $self->_RemovePerlCommentFlags(\@aBlock);
             $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'comments'} .= "\n";
         }
         else 
         {
+            $self->{'_hData'}->{'class'}->{$sClassName}->{'comments'} .= "\n";
             $self->{'_hData'}->{'class'}->{$sClassName}->{'comments'} .= $self->_RemovePerlCommentFlags(\@aBlock);
             $self->{'_hData'}->{'class'}->{$sClassName}->{'comments'} .= "\n";
         }
@@ -629,12 +732,12 @@ sub _ProcessDoxygenCommentBlock
 
 sub _RemovePerlCommentFlags
 {
+    #** @method private _RemovePerlCommentFlags ($aBlock)
     # This method will remove all of the comment marks "#" for our output to Doxygen.  If the line is 
     # flagged for verbatim then lets not do anything.
-    # Required:
-    #   array_ref   (array of lines of doxygen comments)
-    # Return: 
-    #   string  (doxygen comments in one long string)
+    # @param aBlock - required array_ref (doxygen comment as an array of code lines)
+    # @retval sBlockDetails - string (doxygen comments in one long string)
+    #*
     my $self = shift;
     my $aBlock = shift;
     my $logger = $self->GetLogger($self);
@@ -663,24 +766,27 @@ sub _RemovePerlCommentFlags
         $line =~ s/^\s*#\*\s*//;
         # Lets remove all of the Perl comment markers so long as we are not in a verbatim block
         if ($iInVerbatimBlock == 0) { $line =~ s/^\s*#\s*//; }
+
         $logger->debug("code: $line");
         $sBlockDetails .= $line;
     }
     return $sBlockDetails;
 }
 
-sub _ConvertToOfficalDoxygenSyntax
+sub _ConvertToOfficialDoxygenSyntax
 {
+    #** @method private _ConvertToOfficialDoxygenSyntax ($line)
     # This method will check the current line for various unsupported doxygen comment blocks and convert them
     # to the type we support, '#** @command'.  The reason for this is so that we do not need to add them in 
     # every if statement throughout the code.
-    # Required:
-    #   string  (line of code)
-    # Return:
-    #   string  (line of code)
+    # @param line - required string (line of code)
+    # @retval line - string (line of code)
+    #*
     my $self = shift;
     my $line = shift;
-    
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _ConvertToOfficialDoxygenSyntax ###");
+
     # This will match "## @command" and convert it to "#** @command"
     if ($line =~ /^\s*##\s+\@/) { $line =~ s/^(\s*)##(\s+\@)/$1#\*\*$2/; } 
     return $line;
@@ -688,9 +794,14 @@ sub _ConvertToOfficalDoxygenSyntax
 
 sub _ConvertParameters
 {
+    #** @method private _ConvertParameters ()
     # This method will change the $, @, and %, etc to written names so that Doxygen does not have a problem with them
+    # @param sParameters - required string (variable parameter to change)
+    #*
     my $self = shift;
     my $sParameters = shift;
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _ConvertParameters ###");
 
     # Lets clean up the parameters list so that it will work with Doxygen
     $sParameters =~ s/\$\$/scalar_ref /g;
@@ -713,7 +824,8 @@ The Doxygen::Filter::Perl module is designed to provide support for documenting
 perl scripts and modules to be used with the Doxygen engine.  We plan on 
 supporting most Doxygen style comments and POD (plain old documentation) style 
 comments. The Doxgyen style comment blocks for methods/functions can be inside 
-or outside the method/function.  
+or outside the method/function.  Doxygen::Filter::Perl is hosted at 
+http://perldoxygen.sourceforge.net/
 
 =head1 USAGE
 
@@ -746,7 +858,7 @@ project to document your Perl scripts or methods. Example:
 
     /home/jordan/workspace/PerlDoxygen/trunk/> doxygen Doxyfile
 
-All of your documentation will be in the ./doc/html/directory inside of your
+All of your documentation will be in the ./doc/html/ directory inside of your
 project root.
 
 =head1 DOXYGEN SUPPORT
@@ -783,7 +895,7 @@ structural indicator so that they can be documented seperatly.
     # ........
     #* 
     
-    #** @section [section-name]
+    #** @section [section-name] [section-title]
     # ........
     #* 
     
@@ -802,7 +914,7 @@ The Doxygen style comment blocks that describe a function or method can
 exist before, after, or inside the subroutine that it is describing. Examples
 are listed below. It is also important to note that you can leave the public/private
 out and the filter will guess based on the subroutine name. The normal convention 
-in other languages like C is to have the function / method start with an "_" if it
+in other languages like C is to have the function/method start with an "_" if it
 is private/protected.  We do the same thing here even though there is really no 
 such thing in Perl. The whole reason for this is to help users of the code know 
 what functions they should call directly and which they should not.  The generic 
@@ -812,8 +924,8 @@ documentation blocks for functions and methods look like:
     # @brief A brief description of the function
     #
     # A detailed description of the function
-    # @params [required|optional] value
-    # @returns value
+    # @params value [required|optional] [details]
+    # @retval value [details]
     # ....
     #*
 
@@ -821,8 +933,8 @@ documentation blocks for functions and methods look like:
     # @brief A brief description of the method
     #
     # A detailed description of the method
-    # @params [required|optional] value
-    # @returns value
+    # @params value [required|optional] [details]
+    # @retval value [details]
     # ....
     #*
 

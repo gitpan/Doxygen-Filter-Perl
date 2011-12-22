@@ -17,7 +17,7 @@ INSTALLATION
     make test
     make install
 
-    Copy the Doxfile doxygen config file out of this project and put it in the base of your project.  You 
+    Copy the Doxyfile doxygen config file out of this project and put it in the base of your project.  You 
     will want to update at least the following fields in that Doxfile to match your project:
         PROJECT_NAME
         PROJECT_NUMBER

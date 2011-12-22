@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id:  $
+# $Id: Filter.pm 80 2011-12-22 23:24:11Z jordan2175 $
 #*
 package Doxygen::Filter;
 
@@ -27,14 +27,17 @@ use strict;
 use warnings;
 use Log::Log4perl;
 
-our $VERSION     = '0.99_21';
+our $VERSION     = '1.00';
 $VERSION = eval $VERSION;
 
 
 
 sub GetLogger
 {
-    # This method is a helper method to get the Log4perl logger object
+    #** @method public GetLogger ($object)
+    # This method is a helper method to get the Log4perl logger object ane make sure
+    # it knows from which class it was called regardless of where it actually lives.
+    #*
     my $self = shift;
     my $object = shift;
     my $package = ref($object);

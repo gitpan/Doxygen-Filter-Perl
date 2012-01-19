@@ -1,4 +1,8 @@
 Release Notes:
+v1.01 - 2012-01-18
+    Changes
+        Fixed issue where perl scripts were not getting documented correctly
+
 v1.00 - GA Release (2011-12-22)
     Changes
         Added some code documentation and performed some minor code cleanup

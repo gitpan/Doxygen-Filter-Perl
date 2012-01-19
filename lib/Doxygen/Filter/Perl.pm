@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: Perl.pm 80 2011-12-22 23:24:11Z jordan2175 $
+# $Id: Perl.pm 81 2012-01-16 06:27:49Z jordan2175 $
 #*
 package Doxygen::Filter::Perl;
 
@@ -30,7 +30,7 @@ use Log::Log4perl;
 use Pod::POM;
 use Doxygen::Filter::Perl::POD;
 
-our $VERSION     = '1.00';
+our $VERSION     = '1.01';
 $VERSION = eval $VERSION;
 
 
@@ -85,7 +85,12 @@ sub RESETSUB
 }
 
 sub RESETFILE  { shift->{'_aRawFileData'}   = [];    }
-sub RESETCLASS { shift->{'_sCurrentClass'}  = 'main'; }
+sub RESETCLASS 
+{ 
+    my $self = shift;
+    $self->{'_sCurrentClass'}  = 'main'; 
+    push (@{$self->{'_hData'}->{'class'}->{'classorder'}}, 'main');   
+}
 sub RESETDOXY  { shift->{'_aDoxygenBlock'}  = [];    }
 sub RESETPOD   { shift->{'_aPodBlock'}      = [];    }
 
@@ -383,6 +388,10 @@ sub _PrintClassBlock
     my $logger = $self->GetLogger($self);
     $logger->debug("### Entering _PrintClassBlock ###");
 
+    # We need to reset the $1 / $2 match for perl scripts without package classes. 
+    # so lets do it here just to be save.  Yes this is an expensive way of doing it
+    # but it works.
+    $sFullClass =~ /./;   
     $sFullClass =~ /(.*)\:\:(\w+)$/;
     my $parent = $1;
     my $class = $2;

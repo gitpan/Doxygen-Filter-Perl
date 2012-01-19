@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: POD.pm 80 2011-12-22 23:24:11Z jordan2175 $
+# $Id: POD.pm 73 2011-12-22 23:07:14Z jordan2175 $
 #*
 package Doxygen::Filter::Perl::POD;
 

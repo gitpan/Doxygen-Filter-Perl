@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: Filter.pm 78 2011-12-22 23:16:06Z jordan2175 $
+# $Id: Filter.pm 88 2012-07-07 04:27:35Z jordan2175 $
 #*
 package Doxygen::Filter;
 
@@ -27,7 +27,7 @@ use strict;
 use warnings;
 use Log::Log4perl;
 
-our $VERSION     = '1.00';
+our $VERSION     = '1.50';
 $VERSION = eval $VERSION;
 
 

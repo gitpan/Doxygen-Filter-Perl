@@ -1,4 +1,18 @@
 Release Notes:
+v1.50 - 2012-07-06
+    Changes
+        Fixed issue with last commit generating a class when it should not. Patch
+            was submitted by Yuri D'Elia - SVN ID 84
+        Added support to capture locally defined variables/arrays/hashes and print 
+            them out in Doxygen format.  Patch submitted by Yuri D'Elia - SVN ID 85
+        Added support for single in-line doxygen comments based on patch from Yuri D'Elia
+        Increased the version number to remove confusion about older no longer supported
+            versions of Perl filters for Doxygen 
+v1.02 - 2012-04-13
+    Changes
+        Fixed issue where we would define a parent class when there was not one.  This
+        patch was submitted by Yuri D'Elia
+        
 v1.01 - 2012-01-18
     Changes
         Fixed issue where perl scripts were not getting documented correctly

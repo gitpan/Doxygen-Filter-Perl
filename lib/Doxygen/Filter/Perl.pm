@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: Perl.pm 81 2012-01-16 06:27:49Z jordan2175 $
+# $Id: Perl.pm 88 2012-07-07 04:27:35Z jordan2175 $
 #*
 package Doxygen::Filter::Perl;
 
@@ -30,7 +30,7 @@ use Log::Log4perl;
 use Pod::POM;
 use Doxygen::Filter::Perl::POD;
 
-our $VERSION     = '1.01';
+our $VERSION     = '1.50';
 $VERSION = eval $VERSION;
 
 
@@ -241,6 +241,27 @@ sub ProcessFile
                     }
                 }  
             }
+            elsif ($line =~ /^\s*(?:Readonly\s+)?(?:my|our)\s+([\$@%*]\w+)/) 
+            {
+                # Lets look for locally defined variables/arrays/hashes and capture them such as:
+                #   my $var;
+                #   my $var = ...
+                #   our @var = ...
+                #   Readonly our %var ...
+                my $sAttrName = $1;
+                if (defined($sAttrName) && !($sAttrName ~~ [qw(@EXPORT @EXPORT_OK $VERSION)]))
+                {
+                    my $sClassName = $self->{'_sCurrentClass'};
+                    push (@{$self->{'_hData'}->{'class'}->{$sClassName}->{attributeorder}}, $sAttrName);
+                }
+                if ($line =~ /(#\*\*\s+\@.*$)/)
+                {
+                    # Lets look for an single in-line doxygen comment on a variable, array, or hash declaration
+                    my $sBlock = $1;
+                    push (@{$self->{'_aDoxygenBlock'}}, $sBlock);
+                    $self->_ProcessDoxygenCommentBlock(); 
+                }
+            }
         }        
         elsif ($self->{'_sState'} eq 'METHOD')  { $self->_ProcessPerlMethod($line); }
         elsif ($self->{'_sState'} eq 'DOXYGEN') { push (@{$self->{'_aDoxygenBlock'}}, $line); }
@@ -266,12 +287,33 @@ sub PrintAll
     foreach my $class (@{$self->{'_hData'}->{'class'}->{'classorder'}})
     {
         $self->_PrintClassBlock($class);
+
+        # Print all available attributes first that are defined at the global class level
+        foreach my $sAttrName (@{$self->{'_hData'}->{'class'}->{$class}->{'attributeorder'}})
+        {
+            my $sParameters = $self->_ConvertParameters($sAttrName);
+            my $sState = $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$sAttrName}->{'state'} || 'public';
+            my $sComments = $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$sAttrName}->{'comments'};
+            print "/** \@var $sParameters\n";
+            if (defined $sComments)
+            {
+                print "\@brief $sComments\n";
+            }
+
+            my $sDetails = $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$sAttrName}->{'details'};
+            if (defined $sDetails)
+            {
+                print $sDetails;
+            }
+
+            print "*/ $sParameters;\n";
+        }
         
         # Build an object where methods are organizaed by type first, this way they are all grouped correctly
         my $hMethodData = {};
         foreach my $sMethodName (@{$self->{'_hData'}->{'class'}->{$class}->{'subroutineorder'}})
         {
-            # $hMethodData->{function/method}->{public/private}->{name} = 1
+            # Example: $hMethodData->{function/method}->{public/private}->{name} = 1
             my $sType = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$sMethodName}->{'type'};
             my $sState = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$sMethodName}->{'state'};
             $hMethodData->{$sType}->{$sState}->{$sMethodName} = 1;
@@ -333,8 +375,11 @@ sub _ChangeState
         # If nothing is passed in, lets set the current state to the preivous state.
         $logger->debug("No state passed in, lets revert to previous state");
         my $previous = pop @{$self->{'_sPreviousState'}};
-        $logger->debug("Previous state was $previous");
-        unless (defined $previous) 
+        if (defined $previous)
+        {
+            $logger->debug("Previous state was $previous");
+        }
+        else
         { 
             $logger->error("There is no previous state! Setting to NORMAL");
             $previous = 'NORMAL';
@@ -406,7 +451,8 @@ sub _PrintClassBlock
     
     print "\@nosubgrouping */\n";
 
-    print "class $sFullClass : public $parent { \n";
+    if (defined $parent) { print "class $sFullClass : public $parent { \n"; }
+    else { print "class $sFullClass { \n"; }
     print "public:\n";
 }
 
@@ -576,7 +622,6 @@ sub _ProcessPerlMethod
     }
 }
 
-
 sub _ProcessPodCommentBlock
 {
     #** @method private _ProcessPodCommentBlock ()
@@ -647,6 +692,8 @@ sub _ProcessDoxygenCommentBlock
     elsif ($sCommand eq 'package')  { $sSubState = 'DOXYCLASS';    }
     elsif ($sCommand eq 'function') { $sSubState = 'DOXYFUNCTION'; }
     elsif ($sCommand eq 'method')   { $sSubState = 'DOXYMETHOD';   }
+    elsif ($sCommand eq 'attr')     { $sSubState = 'DOXYATTR';     }
+    elsif ($sCommand eq 'var')      { $sSubState = 'DOXYATTR';     }
     else { $sSubState = 'DOXYCOMMENT'; }
     $logger->debug("Substate is now $sSubState");
 
@@ -683,6 +730,23 @@ sub _ProcessDoxygenCommentBlock
             $self->{'_hData'}->{'class'}->{$sClassName}->{'comments'} .= "\n";
         }
     }
+    elsif ($sSubState eq 'DOXYATTR')
+    {
+        # Process the doxygen header first then loop through the rest of the comments
+        my ($sState, $sAttrName, $sComments) = ($sOptions =~ /(?:(public|private)\s+)?([\$@%\*][\w:]+)\s+(.*)/);
+
+        if (defined $sState)
+        {
+            $self->{'_hData'}->{'class'}->{$sClassName}->{'attributes'}->{$sAttrName}->{'state'} = $sState;    
+        }
+        if (defined $sComments)
+        {
+            $self->{'_hData'}->{'class'}->{$sClassName}->{'attributes'}->{$sAttrName}->{'comments'} = $sComments;    
+        }
+        ## We need to remove the command line from this block
+        shift @aBlock;
+        $self->{'_hData'}->{'class'}->{$sClassName}->{'attributes'}->{$sAttrName}->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
+    } # End DOXYATTR    
     elsif ($sSubState eq 'DOXYFUNCTION' || $sSubState eq 'DOXYMETHOD')
     {
         # Process the doxygen header first then loop through the rest of the comments
@@ -903,6 +967,10 @@ structural indicator so that they can be documented seperatly.
     #** @method or @function [public|private] [method-name] (parameters)
     # ........
     #* 
+
+    #** @attr or @var [attribute-name] [brief description]
+    # ........
+    #*
     
     #** @section [section-name] [section-title]
     # ........
@@ -980,6 +1048,7 @@ documented as $$foo, @$bar, %$foobar.  An example would look this:
 
     $self->{'_hData'}->{'class'}->{'classorder'}                = array
     $self->{'_hData'}->{'class'}->{$class}->{'subroutineorder'} = array
+    $self->{'_hData'}->{'class'}->{$class}->{'attributeorder'}  = array
     $self->{'_hData'}->{'class'}->{$class}->{'details'}         = string
     $self->{'_hData'}->{'class'}->{$class}->{'comments'}        = string
 
@@ -990,6 +1059,9 @@ documented as $$foo, @$bar, %$foobar.  An example would look this:
     $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'length'}      = integer
     $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'details'}     = string
     $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'comments'}    = string
+
+    $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$variable}->{'state'}      = string (public / private)
+    $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$variable}->{'comments'}   = string
 
 =head1 AUTHOR
 

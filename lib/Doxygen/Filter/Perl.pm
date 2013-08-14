@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: Perl.pm 88 2012-07-07 04:27:35Z jordan2175 $
+# $Id: Perl.pm 89 2013-08-14 22:58:43Z jordan2175 $
 #*
 package Doxygen::Filter::Perl;
 
@@ -30,7 +30,7 @@ use Log::Log4perl;
 use Pod::POM;
 use Doxygen::Filter::Perl::POD;
 
-our $VERSION     = '1.50';
+our $VERSION     = '1.60';
 $VERSION = eval $VERSION;
 
 
@@ -47,6 +47,17 @@ my $hValidStates = {
     'DOXYMETHOD'        => 24,
     'DOXYCOMMENT'       => 25,
 };
+
+
+our %SYSTEM_PACKAGES = map({ $_ => 1 } qw(
+    base
+    warnings
+    strict
+    Exporter
+    vars
+));
+
+
 
 sub new
 {
@@ -85,14 +96,19 @@ sub RESETSUB
 }
 
 sub RESETFILE  { shift->{'_aRawFileData'}   = [];    }
+
 sub RESETCLASS 
 { 
     my $self = shift;
-    $self->{'_sCurrentClass'}  = 'main'; 
-    push (@{$self->{'_hData'}->{'class'}->{'classorder'}}, 'main');   
+    #$self->{'_sCurrentClass'}  = 'main'; 
+    #push (@{$self->{'_hData'}->{'class'}->{'classorder'}}, 'main');   
+    $self->_SwitchClass('main');
 }
+
 sub RESETDOXY  { shift->{'_aDoxygenBlock'}  = [];    }
 sub RESETPOD   { shift->{'_aPodBlock'}      = [];    }
+
+
 
 sub _init
 {
@@ -119,6 +135,12 @@ sub _init
 # ----------------------------------------
 # Public Methods
 # ----------------------------------------
+sub GetCurrentClass
+{
+    my $self = shift;
+    return $self->{'_hData'}->{'class'}->{$self->{'_sCurrentClass'}};
+}
+
 sub ReadFile 
 {
     #** @method public ReadFile ($sFilename)
@@ -144,7 +166,8 @@ sub ReadFile
     $self->{'_hData'}->{'filename'}->{'shortname'} = $2;
  
     open(DATAIN, $sFilename);
-    my @aFileData = <DATAIN>;
+    #my @aFileData = <DATAIN>;
+    my @aFileData = map({ s/\r$//g; $_; } <DATAIN>);
     close (DATAIN);
     $self->{'_aRawFileData'} = \@aFileData;
 }
@@ -216,8 +239,9 @@ sub ProcessFile
         {
             if ($line =~ /^\s*package\s*(.*)\;$/) 
             { 
-                $self->{'_sCurrentClass'} = $1;
-                push (@{$self->{'_hData'}->{'class'}->{'classorder'}}, $1);        
+                #$self->{'_sCurrentClass'} = $1;
+                #push (@{$self->{'_hData'}->{'class'}->{'classorder'}}, $1);
+                $self->_SwitchClass($1);        
             }
             elsif ($line =~ /our\s+\$VERSION\s*=\s*(.*);$/) 
             {
@@ -228,12 +252,28 @@ sub ProcessFile
                 $version =~ s/qv//;
                 $self->{'_hData'}->{'filename'}->{'version'} = $version;
             }
-            elsif ($line =~ /^\s*use\s+([\w:]+)/) 
+            #elsif ($line =~ /^\s*use\s+([\w:]+)/) 
+            elsif ($line =~ /^\s*use\s+([\w:]+)(|\s*(\S.*?)\s*;*)$/)
             {
                 my $sIncludeModule = $1;
+                my $x = $2;
+                my $expr = $3;
                 if (defined($sIncludeModule)) 
                 {
-                    unless ($sIncludeModule eq "strict" || $sIncludeModule eq "warnings" || $sIncludeModule eq "vars" || $sIncludeModule eq "Exporter" || $sIncludeModule eq "base") 
+                    #unless ($sIncludeModule eq "strict" || $sIncludeModule eq "warnings" || $sIncludeModule eq "vars" || $sIncludeModule eq "Exporter" || $sIncludeModule eq "base") 
+                    if ($sIncludeModule ~~ [qw(base strict warnigns vars Exporter)])
+                    {
+                        if ($sIncludeModule eq "base")
+                        {
+                            my @isa = eval($expr);
+                            push(@{$self->GetCurrentClass()->{inherits}}, _FilterOutSystemPackages(@isa)) unless ($@);
+                        }
+                        else
+                        {
+                            # ignore other system modules
+                        }
+                    }
+                    else
                     {
                         # Allows doxygen to know where to look for other packages
                         $sIncludeModule =~ s/::/\//g;
@@ -241,18 +281,40 @@ sub ProcessFile
                     }
                 }  
             }
-            elsif ($line =~ /^\s*(?:Readonly\s+)?(?:my|our)\s+([\$@%*]\w+)/) 
+            #elsif ($line =~ /^\s*(?:Readonly\s+)?(?:my|our)\s+([\$@%*]\w+)/) 
+            elsif ($line =~ /^\s*(?:Readonly\s+)?(my|our)\s+([\$@%*]\w+)([^=]*|\s*=\s*(\S.*?)\s*;*)$/) 
             {
                 # Lets look for locally defined variables/arrays/hashes and capture them such as:
                 #   my $var;
                 #   my $var = ...
                 #   our @var = ...
                 #   Readonly our %var ...
-                my $sAttrName = $1;
-                if (defined($sAttrName) && !($sAttrName ~~ [qw(@EXPORT @EXPORT_OK $VERSION)]))
+                #my $sAttrName = $1;
+                #if (defined($sAttrName) && !($sAttrName ~~ [qw(@EXPORT @EXPORT_OK $VERSION)]))
+                my $scope = $1;
+                my $sAttrName = $2;
+                my $expr = $4;
+                if (defined $sAttrName)
                 {
-                    my $sClassName = $self->{'_sCurrentClass'};
-                    push (@{$self->{'_hData'}->{'class'}->{$sClassName}->{attributeorder}}, $sAttrName);
+                    #my $sClassName = $self->{'_sCurrentClass'};
+                    #push (@{$self->{'_hData'}->{'class'}->{$sClassName}->{attributeorder}}, $sAttrName);
+                    if ($scope eq "our" && $sAttrName ~~ [qw(@ISA @EXPORT @EXPORT_OK $VERSION)])
+                    {
+                        if ($sAttrName eq "\@ISA" && defined $expr)
+                        {
+                            my @isa = eval($expr);
+                            push(@{$self->GetCurrentClass()->{inherits}}, _FilterOutSystemPackages(@isa)) unless ($@);
+                        }
+                        else
+                        {
+                            # ignore other system variables
+                        }
+                    }
+                    else 
+                    {
+                        my $sClassName = $self->{'_sCurrentClass'};
+                        push(@{$self->{'_hData'}->{'class'}->{$sClassName}->{attributeorder}}, $sAttrName);
+                    }
                 }
                 if ($line =~ /(#\*\*\s+\@.*$)/)
                 {
@@ -286,6 +348,19 @@ sub PrintAll
     
     foreach my $class (@{$self->{'_hData'}->{'class'}->{'classorder'}})
     {
+        my $classDef = $self->{'_hData'}->{'class'}->{$class};
+
+        # skip the default main class unless we really have something to print
+        if ($class eq "main" &&
+            @{$classDef->{attributeorder}} == 0 &&
+            @{$classDef->{subroutineorder}} == 0 &&
+            (!defined $classDef->{details}) &&
+            (!defined $classDef->{comments})
+        )
+        {
+            next;
+        }
+
         $self->_PrintClassBlock($class);
 
         # Print all available attributes first that are defined at the global class level
@@ -337,6 +412,8 @@ sub PrintAll
         }
         # Print end of class mark
         print "}\;\n";
+        # print end of namespace if class is nested
+        print "};\n" if ($class =~ /::/);
     }
 }
 
@@ -344,6 +421,28 @@ sub PrintAll
 # ----------------------------------------
 # Private Methods
 # ----------------------------------------
+sub _FilterOutSystemPackages { return grep({ !exists $SYSTEM_PACKAGES{$_} } @_); }
+
+sub _SwitchClass 
+{ 
+    my $self = shift;
+    my $class = shift;
+
+    $self->{'_sCurrentClass'} = $class; 
+    if (!exists $self->{'_hData'}->{'class'}->{$class})
+    {
+        push(@{$self->{'_hData'}->{'class'}->{'classorder'}}, $class);   
+        $self->{'_hData'}->{'class'}->{$class} = {
+            classname                   => $class,
+            inherits                    => [],
+            attributeorder              => [],
+            subroutineorder             => [],
+        };
+    }
+
+    return $self->{'_hData'}->{'class'}->{$class};
+}
+
 sub _RestoreState { shift->_ChangeState(); }
 sub _ChangeState
 {
@@ -442,6 +541,8 @@ sub _PrintClassBlock
     my $class = $2;
     
     print "/** \@class $sFullClass\n";
+
+    my $classDef = $self->{'_hData'}->{'class'}->{$sFullClass};
     
     my $details = $self->{'_hData'}->{'class'}->{$sFullClass}->{'details'};
     if (defined $details) { print "$details\n"; }
@@ -451,8 +552,19 @@ sub _PrintClassBlock
     
     print "\@nosubgrouping */\n";
 
-    if (defined $parent) { print "class $sFullClass : public $parent { \n"; }
-    else { print "class $sFullClass { \n"; }
+    #if (defined $parent) { print "class $sFullClass : public $parent { \n"; }
+    #else { print "class $sFullClass { \n"; }
+    print "namespace $parent {\n" if ($parent);
+    print "class $class";
+    if (@{$classDef->{inherits}})
+    {
+        my $count = 0;
+        foreach my $inherit (@{$classDef->{inherits}})
+        {
+            print(($count++ == 0 ? ": " : ", ")." public ::".$inherit);
+        }
+    }
+    print "\n{\n";
     print "public:\n";
 }
 
@@ -707,10 +819,13 @@ sub _ProcessDoxygenCommentBlock
     elsif ($sSubState eq 'DOXYCLASS')
     {
         $logger->debug("Processing a Doxygen class object");
-        my $sClassName = $sOptions;
+        #my $sClassName = $sOptions;
+        my $sClassName = $sOptions || $sClassName;
+        my $classDef = $self->_SwitchClass($sClassName);
         # We need to remove the command line from this block
         shift @aBlock;
-        $self->{'_hData'}->{'class'}->{$sClassName}->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
+        #$self->{'_hData'}->{'class'}->{$sClassName}->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
+        $classDef->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
     }
     elsif ($sSubState eq 'DOXYCOMMENT')
     {

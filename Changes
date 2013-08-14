@@ -1,4 +1,13 @@
 Release Notes:
+v1.60 - 2013-08-14
+    Changes
+        Zbynek Vyskovsky submitted a patch to fixe the following issues:
+        Sometimes the annotations were not processed at all, sometimes there were 
+            unexpected "main" classes.
+        Additionally the processing of inheritance was hardcoded to always include 
+            parent package instead of checking for presence of @ISA variable or "base" module.
+        There were also several problems caused misunderstanding of generated code by 
+            doxygen as there is no equivalent of some perl packages constructs in C++.
 v1.50 - 2012-07-06
     Changes
         Fixed issue with last commit generating a class when it should not. Patch

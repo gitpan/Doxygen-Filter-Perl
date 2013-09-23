@@ -1,7 +1,12 @@
 Release Notes:
+v1.61 - 2013-09-23
+    Changes
+        Zbynek Vyskovsky submitted a patch to fix the following issues:
+        for top level classes (main especially) the generated class name was empty
+        @var were processed but not printed to the output
 v1.60 - 2013-08-14
     Changes
-        Zbynek Vyskovsky submitted a patch to fixe the following issues:
+        Zbynek Vyskovsky submitted a patch to fix the following issues:
         Sometimes the annotations were not processed at all, sometimes there were 
             unexpected "main" classes.
         Additionally the processing of inheritance was hardcoded to always include 

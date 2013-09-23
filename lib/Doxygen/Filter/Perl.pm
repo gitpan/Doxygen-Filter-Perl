@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: Perl.pm 89 2013-08-14 22:58:43Z jordan2175 $
+# $Id: Perl.pm 90 2013-09-23 16:42:13Z jordan2175 $
 #*
 package Doxygen::Filter::Perl;
 
@@ -30,7 +30,7 @@ use Log::Log4perl;
 use Pod::POM;
 use Doxygen::Filter::Perl::POD;
 
-our $VERSION     = '1.60';
+our $VERSION     = '1.61';
 $VERSION = eval $VERSION;
 
 
@@ -538,7 +538,7 @@ sub _PrintClassBlock
     $sFullClass =~ /./;   
     $sFullClass =~ /(.*)\:\:(\w+)$/;
     my $parent = $1;
-    my $class = $2;
+    my $class = $2 || $sFullClass;
     
     print "/** \@class $sFullClass\n";
 
@@ -861,6 +861,7 @@ sub _ProcessDoxygenCommentBlock
         ## We need to remove the command line from this block
         shift @aBlock;
         $self->{'_hData'}->{'class'}->{$sClassName}->{'attributes'}->{$sAttrName}->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
+        push(@{$self->GetCurrentClass()->{attributeorder}}, $sAttrName);
     } # End DOXYATTR    
     elsif ($sSubState eq 'DOXYFUNCTION' || $sSubState eq 'DOXYMETHOD')
     {

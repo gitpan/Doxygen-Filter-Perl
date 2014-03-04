@@ -20,3 +20,7 @@ A lot of users have contributed code and code ideas to this project and we welco
 all future ideas and code submissions. One of the largest contributors of ideas 
 and code comes from Kieron Taylor of the The European Bioinformatics Institute and 
 Genome Research Limited.
+
+Special thanks goes to Zbynek Vyskovsky for the many patches, ideas, and features
+to help make this project more complete and allow developers to take advantage of
+nearlly all of the doxygen commands.

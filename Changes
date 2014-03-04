@@ -1,4 +1,22 @@
 Release Notes:
+v1.62 - 2014-02-04
+    Changes
+        Zbynek Vyskovsky submitted a patch to fix the following issues and add the 
+        following functionality:
+        Fix issue with white spaces and empty lines in comments
+        Added more flexibility regarding the types of attributes. Now it's not only 
+            possible to specify variable type as scalar, hash or array, but in general 
+            any type like void, int or in package::Class format. The same applies for 
+            methods where it's now possible to specify return type of the method in 
+            similar way.
+        Added error reporting in case of incorrect syntax
+        Removed dependency for the ~~ operator
+        Attributes and methods now understand static and const keyword and passes them 
+            to doxygen. For global variables it automatically adds static.
+        Order of methods/functions is now kept and left up to doxygen to reorganize 
+            the order if needed.
+        @fn/@function now stands for static function and it's automatically added, 
+            @method is always instance method (unless explicitly mentioning static).
 v1.61 - 2013-09-23
     Changes
         Zbynek Vyskovsky submitted a patch to fix the following issues:

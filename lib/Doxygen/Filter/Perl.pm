@@ -18,7 +18,7 @@
 # @endverbatim
 #
 # @copy 2011, Bret Jordan (jordan2175@gmail.com, jordan@open1x.org)
-# $Id: Perl.pm 90 2013-09-23 16:42:13Z jordan2175 $
+# $Id: Perl.pm 91 2014-03-04 22:01:47Z jordan2175 $
 #*
 package Doxygen::Filter::Perl;
 
@@ -28,9 +28,10 @@ use warnings;
 use parent qw(Doxygen::Filter);
 use Log::Log4perl;
 use Pod::POM;
+use IO::Handle;
 use Doxygen::Filter::Perl::POD;
 
-our $VERSION     = '1.61';
+our $VERSION     = '1.62';
 $VERSION = eval $VERSION;
 
 
@@ -172,6 +173,24 @@ sub ReadFile
     $self->{'_aRawFileData'} = \@aFileData;
 }
 
+sub ReportError
+{
+    #** @method public void ReportError($message)
+    # @brief Reports an error message in the current context.
+    #
+    # The message is prepended by 'filename:lineno: error:' prefix so it is easily
+    # parseable by IDEs and advanced editors.
+    #*
+    my $self = shift;
+    my $message = shift;
+
+    my $hData = $self->{'_hData'};
+    my $header = "$hData->{filename}->{fullpath}:$hData->{lineno}: error: ";
+    $message .= "\n" if (substr($message, -1, 1) ne "\n");
+    $message =~ s/^/$header/gm;
+    STDERR->print($message);
+}
+
 sub ProcessFile
 {
     #** @method public ProcessFile ()
@@ -180,9 +199,11 @@ sub ProcessFile
     my $self = shift;
     my $logger = $self->GetLogger($self);
     $logger->debug("### Entering ProcessFile ###");
-    
+
+    $self->{'_hData'}->{'lineno'} = 0;
     foreach my $line (@{$self->{'_aRawFileData'}})
     {
+        $self->{'_hData'}->{'lineno'}++;
         # Convert syntax block header to supported doxygen form, if this line is a header
         $line = $self->_ConvertToOfficialDoxygenSyntax($line);
             
@@ -261,7 +282,7 @@ sub ProcessFile
                 if (defined($sIncludeModule)) 
                 {
                     #unless ($sIncludeModule eq "strict" || $sIncludeModule eq "warnings" || $sIncludeModule eq "vars" || $sIncludeModule eq "Exporter" || $sIncludeModule eq "base") 
-                    if ($sIncludeModule ~~ [qw(base strict warnigns vars Exporter)])
+                    if ($sIncludeModule =~ m/^(base|strict|warnings|vars|Exporter)$/)
                     {
                         if ($sIncludeModule eq "base")
                         {
@@ -282,7 +303,8 @@ sub ProcessFile
                 }  
             }
             #elsif ($line =~ /^\s*(?:Readonly\s+)?(?:my|our)\s+([\$@%*]\w+)/) 
-            elsif ($line =~ /^\s*(?:Readonly\s+)?(my|our)\s+([\$@%*]\w+)([^=]*|\s*=\s*(\S.*?)\s*;*)$/) 
+            #elsif ($line =~ /^\s*(?:Readonly\s+)?(my|our)\s+([\$@%*]\w+)([^=]*|\s*=\s*(\S.*?)\s*;*)$/) 
+            elsif ($line =~ /^\s*(?:Readonly\s+)?(my|our)\s+(([\$@%*])(\w+))([^=]*|\s*=\s*(\S.*?)\s*;*)$/) 
             {
                 # Lets look for locally defined variables/arrays/hashes and capture them such as:
                 #   my $var;
@@ -290,17 +312,20 @@ sub ProcessFile
                 #   our @var = ...
                 #   Readonly our %var ...
                 #my $sAttrName = $1;
-                #if (defined($sAttrName) && !($sAttrName ~~ [qw(@EXPORT @EXPORT_OK $VERSION)]))
+                #if (defined($sAttrName) && $sAttrName !~ m/^(\@EXPORT|\@EXPORT_OK|\$VERSION)$/)
                 my $scope = $1;
-                my $sAttrName = $2;
-                my $expr = $4;
+                my $fullName = $2;
+                my $typeCode = $3;
+                my $sAttrName = $4;
+                my $expr = $5;
+
                 if (defined $sAttrName)
                 {
                     #my $sClassName = $self->{'_sCurrentClass'};
                     #push (@{$self->{'_hData'}->{'class'}->{$sClassName}->{attributeorder}}, $sAttrName);
-                    if ($scope eq "our" && $sAttrName ~~ [qw(@ISA @EXPORT @EXPORT_OK $VERSION)])
+                    if ($scope eq "our" && $fullName =~ m/^(\@ISA|\@EXPORT|\@EXPORT_OK|\$VERSION)$/)
                     {
-                        if ($sAttrName eq "\@ISA" && defined $expr)
+                        if ($fullName eq "\@ISA" && defined $expr)
                         {
                             my @isa = eval($expr);
                             push(@{$self->GetCurrentClass()->{inherits}}, _FilterOutSystemPackages(@isa)) unless ($@);
@@ -313,7 +338,16 @@ sub ProcessFile
                     else 
                     {
                         my $sClassName = $self->{'_sCurrentClass'};
-                        push(@{$self->{'_hData'}->{'class'}->{$sClassName}->{attributeorder}}, $sAttrName);
+                        if (!exists $self->{'_hData'}->{'class'}->{$sClassName}->{attributes}->{$sAttrName})
+                        {
+                            # only define the attribute if it was not yet defined by doxygen comment
+                            my $attrDef = $self->{'_hData'}->{'class'}->{$sClassName}->{attributes}->{$sAttrName} = {
+                                type        => $self->_ConvertTypeCode($typeCode),
+                                modifiers   => "static ",
+                                state       => $scope eq "my" ? "private" : "public",
+                            };
+                            push(@{$self->{'_hData'}->{'class'}->{$sClassName}->{attributeorder}}, $sAttrName);
+                        }
                     }
                 }
                 if ($line =~ /(#\*\*\s+\@.*$)/)
@@ -366,49 +400,34 @@ sub PrintAll
         # Print all available attributes first that are defined at the global class level
         foreach my $sAttrName (@{$self->{'_hData'}->{'class'}->{$class}->{'attributeorder'}})
         {
-            my $sParameters = $self->_ConvertParameters($sAttrName);
-            my $sState = $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$sAttrName}->{'state'} || 'public';
-            my $sComments = $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$sAttrName}->{'comments'};
-            print "/** \@var $sParameters\n";
-            if (defined $sComments)
+            my $attrDef = $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$sAttrName};
+
+            my $sState = $attrDef->{'state'} || 'public';
+            my $sComments = $attrDef->{'comments'};
+            my $sDetails = $attrDef->{'details'};
+            if (defined $sComments || defined $sDetails)
             {
-                print "\@brief $sComments\n";
+                print "/**\n";
+                if (defined $sComments)
+                {
+                    print " \* \@brief $sComments\n";
+                }
+
+                if ($sDetails)
+                {
+                    print " * \n".$sDetails;
+                }
+
+                print " */\n";
             }
 
-            my $sDetails = $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$sAttrName}->{'details'};
-            if (defined $sDetails)
-            {
-                print $sDetails;
-            }
-
-            print "*/ $sParameters;\n";
+            print("$sState:\n$attrDef->{modifiers}$attrDef->{type} $sAttrName;\n\n");
         }
         
-        # Build an object where methods are organizaed by type first, this way they are all grouped correctly
-        my $hMethodData = {};
-        foreach my $sMethodName (@{$self->{'_hData'}->{'class'}->{$class}->{'subroutineorder'}})
+        # Print all functions/methods in order of appearance, let doxygen take care of grouping them according to modifiers
+        foreach my $methodName (@{$self->{'_hData'}->{'class'}->{$class}->{'subroutineorder'}})
         {
-            # Example: $hMethodData->{function/method}->{public/private}->{name} = 1
-            my $sType = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$sMethodName}->{'type'};
-            my $sState = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$sMethodName}->{'state'};
-            $hMethodData->{$sType}->{$sState}->{$sMethodName} = 1;
-        }
-
-        foreach my $type (keys(%{$hMethodData}))
-        {
-            my $sTypeName = $type . "s";
-            $sTypeName =~ s/([^_]+)/\u\L$1/gi;
-            print "/** \@name Avaliable $sTypeName */\n";
-            print "/** \@{ */\n";
-            foreach my $state (keys(%{$hMethodData->{$type}}))
-            {
-                foreach my $method (keys(%{$hMethodData->{$type}->{$state}}))
-                {
-                    $self->_PrintMethodBlock($class,$state,$type,$method);
-                }
-            }
-            # End of named group block
-            print "/** \@} */\n";
+            $self->_PrintMethodBlock($class, $methodName);
         }
         # Print end of class mark
         print "}\;\n";
@@ -570,7 +589,7 @@ sub _PrintClassBlock
 
 sub _PrintMethodBlock
 {
-    #** @method private _PrintMethodBlock ($class, $state, $type, $method)
+    #** @method private _PrintMethodBlock ($class, $methodDef)
     # This method will print the various subroutines/functions/methods in apprporiate doxygen syntax
     # @param class - required string (name of the class)
     # @param state - required string (current state)
@@ -579,21 +598,26 @@ sub _PrintMethodBlock
     #*
     my $self = shift;
     my $class = shift;
-    my $state = shift;
-    my $type = shift;
     my $method = shift;
+    
+    my $methodDef = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method};
+
+    my $state = $methodDef->{state};
+    my $type = $methodDef->{type};
+    
     my $logger = $self->GetLogger($self);
     $logger->debug("### Entering _PrintMethodBlock ###");
 
-    my $parameters = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'parameters'} || "";
+    my $returntype = $methodDef->{'returntype'} || $type;
+    my $parameters = $methodDef->{'parameters'} || "";
 
-    print "/** \@fn $state $type $method\(\)\n";
+    print "/** \@fn $state $returntype $method\($parameters\)\n";
 
-    my $details = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'details'};
+    my $details = $methodDef->{'details'};
     if (defined $details) { print "$details\n"; }
     else { print "Undocumented Method\n"; }
 
-    my $comments = $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'comments'};
+    my $comments = $methodDef->{'comments'};
     if (defined $comments) { print "$comments\n"; }
 
     # Print collapsible source code block   
@@ -606,13 +630,13 @@ sub _PrintMethodBlock
     print "\@endhtmlonly\n";
     
     print "\@code\n";
-    print "\# Number of lines of code in $method: $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'length'}\n";
-    print "$self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'code'}\n";
+    print "\# Number of lines of code in $method: $methodDef->{'length'}\n";
+    print "$methodDef->{'code'}\n";
     print "\@endcode \@htmlonly\n";
     print "</div>\n";
     print "\@endhtmlonly */\n";
 
-    print "$state $type $method\($parameters\)\;\n";      
+    print "$state $returntype $method\($parameters\)\;\n";      
 }
 
 sub _ProcessPerlMethod
@@ -848,49 +872,67 @@ sub _ProcessDoxygenCommentBlock
     elsif ($sSubState eq 'DOXYATTR')
     {
         # Process the doxygen header first then loop through the rest of the comments
-        my ($sState, $sAttrName, $sComments) = ($sOptions =~ /(?:(public|private)\s+)?([\$@%\*][\w:]+)\s+(.*)/);
-
-        if (defined $sState)
+        #my ($sState, $sAttrName, $sComments) = ($sOptions =~ /(?:(public|private)\s+)?([\$@%\*][\w:]+)\s+(.*)/);
+        my ($sState, $modifiers, $modifiersLoop, $modifiersChoice, $fullSpec, $typeSpec, $typeName, $typeLoop, $pointerLoop, $typeCode, $sAttrName, $sComments) = ($sOptions =~ /(?:(public|protected|private)\s+)?(((static|const)\s+)*)((((\w+::)*\w+(\s+|\s*\*+\s+|\s+\*+\s*))|)([\$@%\*])([\w:]+))\s+(.*)/);
+        if (defined $sAttrName)
         {
-            $self->{'_hData'}->{'class'}->{$sClassName}->{'attributes'}->{$sAttrName}->{'state'} = $sState;    
+            my $attrDef = $self->{'_hData'}->{'class'}->{$sClassName}->{'attributes'}->{$sAttrName} ||= {};
+            if ($typeName)
+            {
+                $attrDef->{'type'} = $typeName;
+            }
+            else
+            {
+                $attrDef->{'type'} = $self->_ConvertTypeCode($typeCode);
+            }
+            if (defined $sState)
+            {
+                $attrDef->{'state'} = $sState;    
+            }
+            if (defined $sComments)
+            {
+                $attrDef->{'comments'} = $sComments;    
+            }
+            if (defined $modifiers)
+            {
+                $attrDef->{'modifiers'} = $modifiers;    
+            }
+            ## We need to remove the command line from this block
+            shift @aBlock;
+            $attrDef->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
+            push(@{$self->GetCurrentClass()->{attributeorder}}, $sAttrName);
         }
-        if (defined $sComments)
+        else
         {
-            $self->{'_hData'}->{'class'}->{$sClassName}->{'attributes'}->{$sAttrName}->{'comments'} = $sComments;    
+            $self->ReportError("invalid syntax for attribute: $sOptions\n");    
         }
-        ## We need to remove the command line from this block
-        shift @aBlock;
-        $self->{'_hData'}->{'class'}->{$sClassName}->{'attributes'}->{$sAttrName}->{'details'} = $self->_RemovePerlCommentFlags(\@aBlock);
-        push(@{$self->GetCurrentClass()->{attributeorder}}, $sAttrName);
     } # End DOXYATTR    
     elsif ($sSubState eq 'DOXYFUNCTION' || $sSubState eq 'DOXYMETHOD')
     {
         # Process the doxygen header first then loop through the rest of the comments
-        $sOptions =~ /^(.*)\s*\(\s*(.*)\s*\)/;
+        $sOptions =~ /^(.*?)\s*\(\s*(.*?)\s*\)/;
         $sOptions = $1;
         my $sParameters = $2;
-    
+
         my @aOptions;
         my $state;        
         my $sMethodName;
         
         if (defined $sOptions)
         {
-            @aOptions = split (" ", $sOptions);
+            @aOptions = split(/\s+/, $sOptions);
             # State = Public/Private
-            if ($aOptions[0] eq "public" || $aOptions[0] eq "private") 
+            if ($aOptions[0] eq "public" || $aOptions[0] eq "private" || $aOptions[0] eq "protected")
             { 
                 $state = shift @aOptions;
-                # Remove any leading or training spaces
-                $state =~ s/\s//g; 
             }
-            if (defined $aOptions[0]) 
-            { 
-                $sMethodName = shift @aOptions;
-                # Remove any leading or training spaces
-                $sMethodName =~ s/\s//g; 
-            }            
+            $sMethodName = pop(@aOptions);
         }       
+
+        if ($sSubState eq "DOXYFUNCTION" && !grep(/^static$/, @aOptions))
+        {
+            unshift(@aOptions, "static");
+        }
 
         unless (defined $sMethodName) 
         {
@@ -906,6 +948,7 @@ sub _ProcessDoxygenCommentBlock
 
         if (defined $sParameters) { $sParameters = $self->_ConvertParameters($sParameters); }
         
+        $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'returntype'} = join(" ", @aOptions);
         $self->{'_hData'}->{'class'}->{$sClassName}->{'subroutines'}->{$sMethodName}->{'type'} = $sCommand;
         if (defined $state)
         {
@@ -954,10 +997,17 @@ sub _RemovePerlCommentFlags
         # Lets remove any doxygen command terminators
         $line =~ s/^\s*#\*\s*//;
         # Lets remove all of the Perl comment markers so long as we are not in a verbatim block
-        if ($iInVerbatimBlock == 0) { $line =~ s/^\s*#\s*//; }
+        if ($iInVerbatimBlock == 0) { $line =~ s/^\s*#+//; }
 
         $logger->debug("code: $line");
         $sBlockDetails .= $line;
+    }
+    $sBlockDetails =~ s/^([ \t]*\n)+//s;
+    chomp($sBlockDetails);
+    if ($sBlockDetails)
+    {
+        $sBlockDetails =~ s/^/ \*/gm;
+        $sBlockDetails .= "\n";
     }
     return $sBlockDetails;
 }
@@ -981,6 +1031,29 @@ sub _ConvertToOfficialDoxygenSyntax
     return $line;
 }
 
+sub _ConvertTypeCode
+{
+    #** @method private _ConvertTypeCode($code)
+    # This method will change the $, @, and %, etc to written names so that Doxygen does not have a problem with them
+    # @param code
+    #   required prefix of variable
+    #*
+    my $self = shift;
+    my $code = shift;
+    my $logger = $self->GetLogger($self);
+    $logger->debug("### Entering _ConvertParameters ###");
+
+    # Lets clean up the parameters list so that it will work with Doxygen
+    $code =~ s/\$\$/scalar_ref/g;
+    $code =~ s/\@\$/array_ref/g;
+    $code =~ s/\%\$/hash_ref/g;
+    $code =~ s/\$/scalar/g;
+    $code =~ s/\@/array/g;
+    $code =~ s/\%/hash/g;
+    
+    return $code;
+}
+
 sub _ConvertParameters
 {
     #** @method private _ConvertParameters ()
@@ -997,7 +1070,7 @@ sub _ConvertParameters
     $sParameters =~ s/\@\$/array_ref /g;
     $sParameters =~ s/\%\$/hash_ref /g;
     $sParameters =~ s/\$/scalar /g;
-    $sParameters =~ s/\@/list /g;
+    $sParameters =~ s/\@/array /g;
     $sParameters =~ s/\%/hash /g;
     
     return $sParameters;
@@ -1080,11 +1153,11 @@ structural indicator so that they can be documented seperatly.
     # ........
     #* 
     
-    #** @method or @function [public|private] [method-name] (parameters)
+    #** @method or @function [public|protected|private] [method-name] (parameters)
     # ........
     #* 
 
-    #** @attr or @var [attribute-name] [brief description]
+    #** @attr or @var [public|protected|private] [type] {$%@}[attribute-name] [brief description]
     # ........
     #*
     
@@ -1113,7 +1186,7 @@ such thing in Perl. The whole reason for this is to help users of the code know
 what functions they should call directly and which they should not.  The generic 
 documentation blocks for functions and methods look like:
 
-    #** @function [public|private] function-name (parameters)
+    #** @function [public|protected|private] [return-type] function-name (parameters)
     # @brief A brief description of the function
     #
     # A detailed description of the function
@@ -1122,7 +1195,7 @@ documentation blocks for functions and methods look like:
     # ....
     #*
 
-    #** @method [public|private] method-name (parameters)
+    #** @method [public|protected|private] [return-type] method-name (parameters)
     # @brief A brief description of the method
     #
     # A detailed description of the method
@@ -1169,6 +1242,7 @@ documented as $$foo, @$bar, %$foobar.  An example would look this:
     $self->{'_hData'}->{'class'}->{$class}->{'comments'}        = string
 
     $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'type'}        = string (method / function)
+    $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'returntype'}  = string (return type)
     $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'state'}       = string (public / private)
     $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'parameters'}  = string (method / function parameters)
     $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'code'}        = string
@@ -1177,7 +1251,9 @@ documented as $$foo, @$bar, %$foobar.  An example would look this:
     $self->{'_hData'}->{'class'}->{$class}->{'subroutines'}->{$method}->{'comments'}    = string
 
     $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$variable}->{'state'}      = string (public / private)
+    $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$variable}->{'modifiers'}  = string
     $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$variable}->{'comments'}   = string
+    $self->{'_hData'}->{'class'}->{$class}->{'attributes'}->{$variable}->{'details'}    = string
 
 =head1 AUTHOR
 

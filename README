@@ -30,6 +30,7 @@ DEPENDENCIES
     Log:Log4perl (1.33)             [License = Perl]
     Test::More (0.98)               [License = Perl]
     Test::Output (1.01)             [License = Perl]
+    IO::Handle
 
 
 NOTES
